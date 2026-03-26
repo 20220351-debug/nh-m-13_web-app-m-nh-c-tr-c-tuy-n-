@@ -2,92 +2,99 @@
 <html lang="vi">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Giới thiệu nhóm - Web App nghe nhạc</title>
-
-  <!-- Font + Icon -->
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;500;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
-
-  <!-- CSS -->
-  <link rel="stylesheet" href="style.css">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Giới Thiệu Nhóm – Xây dựng Web-app nghe nhạc trực tuyến</title>
+  <link rel="stylesheet" href="style.css" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" />
 </head>
-
 <body>
 
-<!-- ===== HERO ===== -->
-<header class="hero">
-  <div class="hero-content">
-    <span class="badge">DCCNTT13.10.3</span>
-    <h1>CHUYÊN ĐỀ 2</h1>
-    <p>Đề tài: <strong>Web-app nghe nhạc trực tuyến</strong></p>
-    <p class="sub">Giới thiệu thành viên nhóm</p>
-  </div>
-</header>
-
-<!-- ===== MEMBERS ===== -->
-<main>
-  <section class="members">
-    <h2><i class="fa-solid fa-users"></i> Thành viên nhóm</h2>
-
-    <div class="grid">
-
-      <!-- Member -->
-      <div class="card leader">
-        <span class="ribbon">Trưởng nhóm</span>
-
-        <div class="avatar-box" onclick="upload('file1')">
-          <img id="img1" src="photos/member1.jpg" onerror="this.src='placeholder.svg'">
-          <div class="overlay"><i class="fa-solid fa-camera"></i></div>
-        </div>
-
-        <input type="file" id="file1" hidden onchange="preview(this,'img1')">
-
-        <h3>Phạm Thùy Dương</h3>
-        <p>MSSV: 20220351</p>
-        <p>Lớp: DCCNTT13.10.3</p>
-      </div>
-
-      <!-- Member -->
-      <div class="card">
-        <div class="avatar-box" onclick="upload('file2')">
-          <img id="img2" src="photos/member2.jpg" onerror="this.src='placeholder.svg'">
-          <div class="overlay"><i class="fa-solid fa-camera"></i></div>
-        </div>
-
-        <input type="file" id="file2" hidden onchange="preview(this,'img2')">
-
-        <h3>Nguyễn Lê Thùy Linh</h3>
-        <p>MSSV: 20220345</p>
-        <p>Lớp: DCCNTT13.10.3</p>
-      </div>
-
+  <!-- ===== HERO ===== -->
+  <header class="hero">
+    <div class="hero-bg"></div>
+    <div class="hero-content">
+      <span class="badge">DCCNTT13.10.3</span>
+      <h1>CHUYÊN ĐỀ 2</h1>
+      <p class="hero-subtitle">Đề tài: <strong>Xây dựng Web-app nghe nhạc trực tuyến</strong></p>
+      <div class="hero-divider"></div>
+      <p class="hero-desc">Giới thiệu thành viên nhóm</p>
     </div>
-  </section>
-</main>
+    <div class="scroll-hint"><i class="fa-solid fa-chevron-down"></i></div>
+  </header>
 
-<!-- ===== FOOTER ===== -->
-<footer>
-  <p>© 2026 Nhóm Chuyên Đề 2</p>
-</footer>
+  <!-- ===== MEMBERS ===== -->
+  <main>
+    <section class="members-section">
+      <div class="section-header">
+        <h2><i class="fa-solid fa-users"></i> Thành Viên Nhóm</h2>
+        <p>Nhấn vào ảnh để thay thế bằng ảnh của bạn</p>
+      </div>
 
-<!-- ===== JS ===== -->
-<script>
-  function upload(id) {
-    document.getElementById(id).click();
-  }
+      <div class="cards-grid cards-grid--two">
 
-  function preview(input, imgId) {
-    const file = input.files[0];
-    if (!file) return;
+        <!-- Member 1 -->
+        <div class="card leader">
+          <div class="card-ribbon">Trưởng nhóm</div>
+          <div class="avatar-wrapper" onclick="triggerUpload('photo1')" title="Nhấn để đổi ảnh">
+            <img id="avatar1" src="photos/member1.jpg" onerror="this.src='placeholder.svg'" alt="Phạm Thùy Dương" class="avatar" />
+            <div class="avatar-overlay"><i class="fa-solid fa-camera"></i><span>Đổi ảnh</span></div>
+          </div>
+          <input type="file" id="photo1" accept="image/*" style="display:none" onchange="previewPhoto(this,'avatar1')" />
+          <div class="card-body">
+            <h3>Phạm Thùy Dương</h3>
+            <ul class="info-list">
+              <li><i class="fa-solid fa-id-card"></i> <strong>MSSV:</strong> 20220351</li>
+              <li><i class="fa-solid fa-graduation-cap"></i> <strong>Lớp:</strong> DCCNTT13.10.3</li>
+              <li><i class="fa-solid fa-star"></i> <strong>Vai trò:</strong> Trưởng nhóm</li>
+            </ul>
+          </div>
+        </div>
 
-    const reader = new FileReader();
-    reader.onload = e => {
-      document.getElementById(imgId).src = e.target.result;
-    };
-    reader.readAsDataURL(file);
-  }
-</script>
+        <!-- Member 2 -->
+        <div class="card">
+          <div class="avatar-wrapper" onclick="triggerUpload('photo2')" title="Nhấn để đổi ảnh">
+            <img id="avatar2" src="photos/member2.jpg" onerror="this.src='placeholder.svg'" alt="Nguyễn Lê Thùy Linh" class="avatar" />
+            <div class="avatar-overlay"><i class="fa-solid fa-camera"></i><span>Đổi ảnh</span></div>
+          </div>
+          <input type="file" id="photo2" accept="image/*" style="display:none" onchange="previewPhoto(this,'avatar2')" />
+          <div class="card-body">
+            <h3>Nguyễn Lê Thùy Linh</h3>
+            <ul class="info-list">
+              <li><i class="fa-solid fa-id-card"></i> <strong>MSSV:</strong> 20220345</li>
+              <li><i class="fa-solid fa-graduation-cap"></i> <strong>Lớp:</strong> DCCNTT13.10.3</li>
+              <li><i class="fa-solid fa-user"></i> <strong>Vai trò:</strong> Thành viên</li>
+            </ul>
+          </div>
+        </div>
 
+
+
+      </div>
+    </section>
+
+    
+
+  <footer>
+    <p>© 2026 Nhóm Chuyên Đề 2 · DCCNTT13.10.3</p>
+  </footer>
+
+  <script>
+    function triggerUpload(inputId) {
+      document.getElementById(inputId).click();
+    }
+
+    function previewPhoto(input, imgId) {
+      if (input.files && input.files[0]) {
+        const reader = new FileReader();
+        reader.onload = e => {
+          const img = document.getElementById(imgId);
+          img.src = e.target.result;
+          img.style.objectFit = 'cover';
+        };
+        reader.readAsDataURL(input.files[0]);
+      }
+    }
+  </script>
 </body>
 </html>
