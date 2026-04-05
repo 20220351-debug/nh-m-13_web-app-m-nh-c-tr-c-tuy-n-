@@ -158,8 +158,78 @@ class _NowPlayingState extends State<NowPlaying> {
     return text.contains('.') ? text.split('.').first : text;
   }
 
+  void _toggleFavorite() {
+    final current = song;
+    if (current == null) return;
+    setState(() {
+      widget.songData.toggleFavorite(current.id);
+    });
+  }
+
+  void _showAddToPlaylistSheet() {
+    final current = song;
+    if (current == null) return;
+    final songData = widget.songData;
+    final names = songData.playlistNames;
+
+    showModalBottomSheet<void>(
+      context: context,
+      builder: (sheetCtx) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Padding(
+                padding: const EdgeInsets.all(16),
+                child: Text(
+                  'Thêm vào Playlist',
+                  style: Theme.of(sheetCtx).textTheme.titleMedium,
+                ),
+              ),
+              const Divider(height: 1),
+              if (names.isEmpty)
+                const Padding(
+                  padding: EdgeInsets.all(24),
+                  child: Text('Chưa có playlist nào.'),
+                )
+              else
+                ...names.map(
+                  (name) => ListTile(
+                    leading: Icon(
+                      name == 'Yêu thích'
+                          ? Icons.favorite_rounded
+                          : Icons.queue_music_rounded,
+                      color: name == 'Yêu thích' ? Colors.pinkAccent : null,
+                    ),
+                    title: Text(name),
+                    onTap: () {
+                      songData.addToPlaylist(name, current.id);
+                      Navigator.pop(sheetCtx);
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text(
+                              'Đã thêm "${current.title}" vào $name'),
+                          duration: const Duration(seconds: 1),
+                        ),
+                      );
+                      setState(() {});
+                    },
+                  ),
+                ),
+              const SizedBox(height: 8),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    final currentSong = song;
+    final isFav =
+        currentSong != null && widget.songData.isFavorite(currentSong.id);
+
     Widget buildPlayer() => Container(
           padding: const EdgeInsets.all(20.0),
           child: Column(mainAxisSize: MainAxisSize.min, children: [
@@ -215,14 +285,29 @@ class _NowPlayingState extends State<NowPlaying> {
               mainAxisAlignment: MainAxisAlignment.spaceEvenly,
               children: <Widget>[
                 IconButton(
-                    icon: Icon(
-                      isMuted ? Icons.headset : Icons.headset_off,
-                      color: Theme.of(context).unselectedWidgetColor,
-                    ),
-                    color: Theme.of(context).colorScheme.primary,
-                    onPressed: () {
-                      mute(!isMuted);
-                    }),
+                  icon: Icon(
+                    isFav ? Icons.favorite : Icons.favorite_border,
+                    color: isFav ? Colors.pinkAccent : Colors.white70,
+                  ),
+                  tooltip: isFav ? 'Bỏ yêu thích' : 'Yêu thích',
+                  onPressed: _toggleFavorite,
+                ),
+                IconButton(
+                  icon: const Icon(Icons.playlist_add),
+                  color: Colors.white70,
+                  tooltip: 'Thêm vào Playlist',
+                  onPressed: _showAddToPlaylistSheet,
+                ),
+                IconButton(
+                  icon: Icon(
+                    isMuted ? Icons.headset : Icons.headset_off,
+                    color: Theme.of(context).unselectedWidgetColor,
+                  ),
+                  color: Theme.of(context).colorScheme.primary,
+                  onPressed: () {
+                    mute(!isMuted);
+                  },
+                ),
               ],
             ),
           ]),

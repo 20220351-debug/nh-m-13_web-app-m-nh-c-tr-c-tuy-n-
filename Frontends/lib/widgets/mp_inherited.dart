@@ -5,9 +5,18 @@ class MPInheritedWidget extends InheritedWidget {
   final SongData songData;
   final bool isLoading;
   final Future<void> Function()? onAddManualSongs;
+  final void Function(int songId)? onToggleFavorite;
+  final void Function()? onRefreshSongs;
 
-  const MPInheritedWidget(this.songData, this.isLoading,
-      {required super.child, super.key, this.onAddManualSongs});
+  const MPInheritedWidget(
+    this.songData,
+    this.isLoading, {
+    required super.child,
+    super.key,
+    this.onAddManualSongs,
+    this.onToggleFavorite,
+    this.onRefreshSongs,
+  });
 
   static MPInheritedWidget of(BuildContext context) {
     return context.dependOnInheritedWidgetOfExactType<MPInheritedWidget>()!;
@@ -17,5 +26,7 @@ class MPInheritedWidget extends InheritedWidget {
   bool updateShouldNotify(MPInheritedWidget oldWidget) =>
       songData != oldWidget.songData ||
       isLoading != oldWidget.isLoading ||
-      onAddManualSongs != oldWidget.onAddManualSongs;
+      onAddManualSongs != oldWidget.onAddManualSongs ||
+      onToggleFavorite != oldWidget.onToggleFavorite ||
+      onRefreshSongs != oldWidget.onRefreshSongs;
 }

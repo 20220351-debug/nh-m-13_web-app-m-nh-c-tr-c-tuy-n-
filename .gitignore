@@ -6,6 +6,8 @@
 *.swp
 .buildlog/
 .history
+.DS_Store
+/Frontends/.DS_Store
 # Flutter repo-specific
 /bin/cache/
 /bin/internal/bootstrap.bat

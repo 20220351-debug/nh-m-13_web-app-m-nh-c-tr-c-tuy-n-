@@ -5,18 +5,16 @@ import 'package:flute_example/data/song_data.dart';
 import 'package:flute_example/pages/root_page.dart';
 import 'package:flute_example/widgets/mp_inherited.dart';
 import 'package:flutter/material.dart';
-import 'package:media_store_plus/media_store_plus.dart';
 import 'package:on_audio_query_pluse/on_audio_query.dart';
 
 class MyApp extends StatefulWidget {
   const MyApp({super.key});
 
   @override
-  _MyAppState createState() => new _MyAppState();
+  _MyAppState createState() => _MyAppState();
 }
 
 class _MyAppState extends State<MyApp> {
-  final MediaStore _mediaStore = MediaStore();
   final OnAudioQuery _audioQuery = OnAudioQuery();
   final SongData _songData = SongData(const []);
   bool _isLoading = true;
@@ -45,34 +43,43 @@ class _MyAppState extends State<MyApp> {
     });
 
     try {
-      if (Platform.isAndroid) {
-        await MediaStore.ensureInitialized();
+      // Load saved data (favorites, playlists, manual song paths) first.
+      await _songData.loadFromStorage();
 
+      if (Platform.isAndroid) {
         // Request on_audio_query permissions (READ_MEDIA_AUDIO on Android 13+,
-        // READ_EXTERNAL_STORAGE on older). This is needed so artwork queries
-        // don't fail with MissingPermissions in the native plugin.
+        // READ_EXTERNAL_STORAGE on older).
         final hasPermission = await _audioQuery.permissionsStatus();
         if (!hasPermission) {
           final granted = await _audioQuery.permissionsRequest();
           if (!granted) {
+            // Permission denied — still load any previously-saved manual songs.
+            await _loadSavedManualSongs();
+
             if (!mounted) return;
             setState(() {
               _isLoading = false;
               _permissionDenied = true;
-              _errorMessage =
-                  'Quyền truy cập bộ nhớ bị từ chối.\nVui lòng cấp quyền để quét nhạc và hiển thị ảnh bìa, hoặc thêm bài hát thủ công.';
+              _errorMessage = _songData.songs.isEmpty
+                  ? 'Quyền truy cập bộ nhớ bị từ chối.\nVui lòng cấp quyền để quét nhạc, hoặc thêm bài hát thủ công.'
+                  : null;
             });
             return;
           }
         }
       }
 
-      final songs = await _loadSongsFromMusicFolder();
-      if (songs.isEmpty) {
+      // Query ALL songs on the device using on_audio_query.
+      final songs = await _querySongsFromDevice();
+
+      // Merge scanned songs with any saved manual songs.
+      _songData.setSongs(songs);
+      await _loadSavedManualSongs();
+
+      if (_songData.songs.isEmpty) {
         _errorMessage =
-            'Không tìm thấy nhạc. Bạn có thể chọn thư mục nhạc hoặc thêm bài hát thủ công.';
+            'Không tìm thấy nhạc. Bạn có thể thêm bài hát thủ công.';
       } else {
-        _songData.setSongs(songs);
         _errorMessage = null;
       }
     } catch (error) {
@@ -86,82 +93,41 @@ class _MyAppState extends State<MyApp> {
     });
   }
 
-  Future<List<SongModel>> _loadSongsFromMusicFolder() async {
+  /// Query all songs from the device via [OnAudioQuery], filtering to
+  /// files with duration >= 30 seconds.
+  Future<List<SongModel>> _querySongsFromDevice() async {
     if (!Platform.isAndroid) {
       return const <SongModel>[];
     }
 
-    final documentTree = await _mediaStore.requestForAccess(
-      initialRelativePath: 'Music',
-    );
+    try {
+      final allSongs = await _audioQuery.querySongs(
+        sortType: SongSortType.TITLE,
+        orderType: OrderType.ASC_OR_SMALLER,
+        uriType: UriType.EXTERNAL,
+        ignoreCase: true,
+      );
 
-    if (documentTree == null) {
+      // Filter: only songs with duration >= 30 000 ms (30 seconds).
+      return allSongs.where((song) {
+        final durationMs = song.duration ?? 0;
+        return durationMs >= 30000;
+      }).toList();
+    } catch (e) {
+      // If querying fails (e.g. missing permissions), return empty.
       return const <SongModel>[];
     }
+  }
 
-    final acceptedExtensions = <String>{
-      '.mp3',
-      '.m4a',
-      '.aac',
-      '.wav',
-      '.flac',
-      '.ogg',
-      '.opus',
-      '.amr',
-      '.wma',
-    };
+  /// Load manually-added songs from persistent storage and merge them.
+  Future<void> _loadSavedManualSongs() async {
+    final paths = _songData.manualSongPaths;
+    if (paths.isEmpty) return;
 
-    final songs = <SongModel>[];
-    for (final document in documentTree.children) {
-      if (document.isDirectory) {
-        continue;
-      }
-
-      final fileName = document.name ?? 'Unknown track';
-      final extension = fileName.contains('.')
-          ? '.${fileName.split('.').last.toLowerCase()}'
-          : '';
-      if (acceptedExtensions.isNotEmpty &&
-          extension.isNotEmpty &&
-          !acceptedExtensions.contains(extension)) {
-        continue;
-      }
-
-      songs.add(
-        SongModel({
-          '_id': document.uri.hashCode.abs(),
-          '_data': document.uriString,
-          '_uri': document.uriString,
-          '_display_name': fileName,
-          '_display_name_wo_ext': fileName.contains('.')
-              ? fileName.substring(0, fileName.lastIndexOf('.'))
-              : fileName,
-          '_size': document.fileLength,
-          'album': 'Music',
-          'album_id': null,
-          'artist': 'Unknown artist',
-          'artist_id': null,
-          'genre': null,
-          'genre_id': null,
-          'bookmark': null,
-          'composer': null,
-          'date_added': document.lastModified,
-          'date_modified': document.lastModified,
-          'duration': null,
-          'title': fileName,
-          'track': null,
-          'file_extension': extension.replaceFirst('.', ''),
-          'is_alarm': false,
-          'is_audiobook': false,
-          'is_music': true,
-          'is_notification': false,
-          'is_podcast': false,
-          'is_ringtone': false,
-        }),
-      );
-    }
-
-    return songs;
+    // Only add files that still exist on disk.
+    final validPaths = paths.where((p) => File(p).existsSync()).toList();
+    final manual = SongData.buildManualSongs(validPaths);
+    _songData.addSongs(manual);
   }
 
   Future<void> _addManualSongs() async {
@@ -186,22 +152,31 @@ class _MyAppState extends State<MyApp> {
         return;
       }
 
+      _songData.addSongs(manualSongs);
+      _songData.addManualPaths(filePaths);
+      await _songData.persistManualPaths();
+
+      if (!mounted) return;
+
       setState(() {
-        _songData.addSongs(manualSongs);
         _errorMessage = null;
         _permissionDenied = false;
         _isLoading = false;
       });
     } catch (error) {
-      if (!mounted) {
-        return;
-      }
+      if (!mounted) return;
 
       setState(() {
         _errorMessage = 'Không thể thêm bài hát: $error';
         _isLoading = false;
       });
     }
+  }
+
+  void _toggleFavorite(int songId) {
+    setState(() {
+      _songData.toggleFavorite(songId);
+    });
   }
 
   Future<void> _retryPermission() async {
@@ -249,7 +224,7 @@ class _MyAppState extends State<MyApp> {
                   OutlinedButton.icon(
                     onPressed: _initPlatformState,
                     icon: const Icon(Icons.refresh),
-                    label: const Text('Chọn thư mục nhạc'),
+                    label: const Text('Quét lại'),
                   ),
               ],
             ),
@@ -268,6 +243,8 @@ class _MyAppState extends State<MyApp> {
       _songData,
       _isLoading,
       onAddManualSongs: _addManualSongs,
+      onToggleFavorite: _toggleFavorite,
+      onRefreshSongs: _initPlatformState,
       child: child,
     );
   }
