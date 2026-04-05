@@ -185,7 +185,6 @@ class SongData {
     }
     final ids = _playlists[playlistName];
     if (ids == null) return [];
-    final idSet = ids.toSet();
     // Preserve playlist order
     final songMap = {for (final s in _songs) s.id: s};
     return ids.map((id) => songMap[id]).whereType<SongModel>().toList();

@@ -1,11 +1,14 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flute_example/data/song_data.dart';
 import 'package:flute_example/pages/root_page.dart';
+import 'package:flute_example/utils/permission_state.dart';
 import 'package:flute_example/widgets/mp_inherited.dart';
 import 'package:flutter/material.dart';
 import 'package:on_audio_query_pluse/on_audio_query.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 class MyApp extends StatefulWidget {
   const MyApp({super.key});
@@ -14,32 +17,131 @@ class MyApp extends StatefulWidget {
   _MyAppState createState() => _MyAppState();
 }
 
-class _MyAppState extends State<MyApp> {
+class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
   final OnAudioQuery _audioQuery = OnAudioQuery();
   final SongData _songData = SongData(const []);
   bool _isLoading = true;
   String? _errorMessage;
   bool _permissionDenied = false;
+  bool _permissionPermanentlyDenied = false;
+
+  /// Guards against concurrent / re-entrant calls to [_initPlatformState].
+  bool _isInitializing = false;
+
+  /// Timestamp of the last successful [_initPlatformState] completion.
+  /// Used to debounce rapid retry taps.
+  DateTime? _lastInitTime;
+
+  /// Minimum interval between successive [_initPlatformState] runs.
+  static const _initDebounce = Duration(seconds: 2);
+
+  /// Set to `true` when the user taps "Open Settings" so we know to
+  /// re-check permission on the next resume.  Cleared after the check.
+  bool _waitingForSettingsReturn = false;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _initPlatformState();
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _songData.audioPlayer.dispose();
     super.dispose();
   }
 
-  Future<void> _initPlatformState() async {
-    if (!mounted) return;
+  /// Re-check permission ONLY when the user is returning from the system
+  /// Settings app (i.e. they tapped "Open Settings" for a permanently-denied
+  /// permission).
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && _waitingForSettingsReturn) {
+      _waitingForSettingsReturn = false;
+      _initPlatformState(bypassDebounce: true);
+    }
+  }
+
+  // ── Permission handling ─────────────────────────────────────────────────────
+
+  /// Request the correct media permission using permission_handler,
+  /// then sync with the on_audio_query plugin so its internal state
+  /// also recognises the grant (prevents "Reply already submitted" crash).
+  ///
+  /// Returns `true` only when BOTH the system AND the plugin agree that
+  /// the app has media permission.
+  Future<bool> _requestAndSyncPermission() async {
+    // ── Step 1: System-level permission via permission_handler ──
+    var status = await Permission.audio.status;
+    if (!status.isGranted) {
+      status = await Permission.audio.request();
+    }
+    // Fallback for Android 12 and below (READ_EXTERNAL_STORAGE)
+    if (!status.isGranted) {
+      status = await Permission.storage.status;
+      if (!status.isGranted) {
+        status = await Permission.storage.request();
+      }
+    }
+
+    if (!status.isGranted) {
+      final audioPerm = await Permission.audio.status;
+      final storagePerm = await Permission.storage.status;
+      _permissionPermanentlyDenied =
+          audioPerm.isPermanentlyDenied || storagePerm.isPermanentlyDenied;
+      return false;
+    }
+
+    // ── Step 2: Small delay – let the OS propagate the grant ──
+    await Future.delayed(const Duration(milliseconds: 300));
+
+    // ── Step 3: Sync with on_audio_query plugin ──
+    // The plugin maintains its own permission state.  If we skip this step,
+    // its native querySongs / queryArtwork will still think there is no
+    // access and hit the buggy double-reply code path.
+    try {
+      bool pluginReady = await _audioQuery.permissionsStatus();
+      if (!pluginReady) {
+        pluginReady = await _audioQuery.permissionsRequest();
+      }
+      return pluginReady;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  // ── Initialization ──────────────────────────────────────────────────────────
+
+  /// Central initialization: request permission → query songs → update UI.
+  ///
+  /// **Concurrency-safe**:
+  /// - [_isInitializing] prevents re-entrant execution.
+  /// - [_lastInitTime] + [_initDebounce] prevents rapid successive calls
+  ///   from button mashing / widget rebuilds.
+  Future<void> _initPlatformState({bool bypassDebounce = false}) async {
+    // Prevent concurrent / re-entrant execution.
+    if (_isInitializing || !mounted) return;
+
+    // Debounce: refuse to run again within [_initDebounce] of the last run,
+    // unless explicitly bypassed (e.g. returning from Settings).
+    if (!bypassDebounce && _lastInitTime != null) {
+      final elapsed = DateTime.now().difference(_lastInitTime!);
+      if (elapsed < _initDebounce) return;
+    }
+
+    _isInitializing = true;
+
+    // Reset the permission completer so that any widgets currently awaiting
+    // `AudioPermissionState.ready` will re-await the new resolution.
+    AudioPermissionState.reset();
 
     setState(() {
       _isLoading = true;
       _errorMessage = null;
       _permissionDenied = false;
+      _permissionPermanentlyDenied = false;
     });
 
     try {
@@ -47,29 +149,38 @@ class _MyAppState extends State<MyApp> {
       await _songData.loadFromStorage();
 
       if (Platform.isAndroid) {
-        // Request on_audio_query permissions (READ_MEDIA_AUDIO on Android 13+,
-        // READ_EXTERNAL_STORAGE on older).
-        final hasPermission = await _audioQuery.permissionsStatus();
-        if (!hasPermission) {
-          final granted = await _audioQuery.permissionsRequest();
-          if (!granted) {
-            // Permission denied — still load any previously-saved manual songs.
-            await _loadSavedManualSongs();
+        final granted = await _requestAndSyncPermission();
 
-            if (!mounted) return;
-            setState(() {
-              _isLoading = false;
-              _permissionDenied = true;
-              _errorMessage = _songData.songs.isEmpty
-                  ? 'Quyền truy cập bộ nhớ bị từ chối.\nVui lòng cấp quyền để quét nhạc, hoặc thêm bài hát thủ công.'
-                  : null;
-            });
+        // ── CRITICAL: Resolve permission state BEFORE any native query ──
+        // This unblocks SafeArtworkWidget instances that await
+        // AudioPermissionState.ready.
+        AudioPermissionState.resolve(granted);
+
+        if (!granted) {
+          // Still load any previously-saved manual songs.
+          await _loadSavedManualSongs();
+
+          if (!mounted) {
+            _isInitializing = false;
             return;
           }
+          setState(() {
+            _isLoading = false;
+            _permissionDenied = true;
+            _errorMessage = _songData.songs.isEmpty
+                ? 'Quyền truy cập bộ nhớ bị từ chối.\nVui lòng cấp quyền để quét nhạc, hoặc thêm bài hát thủ công.'
+                : null;
+          });
+          _isInitializing = false;
+          _lastInitTime = DateTime.now();
+          return;
         }
+      } else {
+        // Non-Android platforms don't need runtime permission.
+        AudioPermissionState.resolve(true);
       }
 
-      // Query ALL songs on the device using on_audio_query.
+      // Query ALL songs on the device (single call, result cached in _songData).
       final songs = await _querySongsFromDevice();
 
       // Merge scanned songs with any saved manual songs.
@@ -84,19 +195,32 @@ class _MyAppState extends State<MyApp> {
       }
     } catch (error) {
       _errorMessage = 'Lỗi khi tải nhạc: $error';
+      // Even on error, resolve permission so widgets aren't blocked forever.
+      if (!AudioPermissionState.isResolved) {
+        AudioPermissionState.resolve(false);
+      }
     }
 
-    if (!mounted) return;
+    if (!mounted) {
+      _isInitializing = false;
+      return;
+    }
 
     setState(() {
       _isLoading = false;
     });
+    _isInitializing = false;
+    _lastInitTime = DateTime.now();
   }
 
   /// Query all songs from the device via [OnAudioQuery], filtering to
   /// files with duration >= 30 seconds.
+  ///
+  /// CRITICAL: Guarded by [AudioPermissionState.granted].  The native plugin
+  /// crashes with "Reply already submitted" if querySongs is invoked before
+  /// the plugin's internal permission check passes.
   Future<List<SongModel>> _querySongsFromDevice() async {
-    if (!Platform.isAndroid) {
+    if (!Platform.isAndroid || !AudioPermissionState.granted) {
       return const <SongModel>[];
     }
 
@@ -114,7 +238,6 @@ class _MyAppState extends State<MyApp> {
         return durationMs >= 30000;
       }).toList();
     } catch (e) {
-      // If querying fails (e.g. missing permissions), return empty.
       return const <SongModel>[];
     }
   }
@@ -124,7 +247,6 @@ class _MyAppState extends State<MyApp> {
     final paths = _songData.manualSongPaths;
     if (paths.isEmpty) return;
 
-    // Only add files that still exist on disk.
     final validPaths = paths.where((p) => File(p).existsSync()).toList();
     final manual = SongData.buildManualSongs(validPaths);
     _songData.addSongs(manual);
@@ -143,14 +265,10 @@ class _MyAppState extends State<MyApp> {
               .whereType<String>()
               .toList(growable: false) ??
           const <String>[];
-      if (filePaths.isEmpty) {
-        return;
-      }
+      if (filePaths.isEmpty) return;
 
       final manualSongs = SongData.buildManualSongs(filePaths);
-      if (manualSongs.isEmpty) {
-        return;
-      }
+      if (manualSongs.isEmpty) return;
 
       _songData.addSongs(manualSongs);
       _songData.addManualPaths(filePaths);
@@ -180,7 +298,12 @@ class _MyAppState extends State<MyApp> {
   }
 
   Future<void> _retryPermission() async {
-    await _initPlatformState();
+    await _initPlatformState(bypassDebounce: true);
+  }
+
+  Future<void> _openSettings() async {
+    _waitingForSettingsReturn = true;
+    await openAppSettings();
   }
 
   Widget _buildPermissionFallback() {
@@ -209,7 +332,13 @@ class _MyAppState extends State<MyApp> {
               spacing: 12,
               runSpacing: 12,
               children: [
-                if (_permissionDenied)
+                if (_permissionDenied && _permissionPermanentlyDenied)
+                  ElevatedButton.icon(
+                    onPressed: _openSettings,
+                    icon: const Icon(Icons.settings),
+                    label: const Text('Mở Cài đặt'),
+                  ),
+                if (_permissionDenied && !_permissionPermanentlyDenied)
                   ElevatedButton.icon(
                     onPressed: _retryPermission,
                     icon: const Icon(Icons.security),
@@ -222,7 +351,7 @@ class _MyAppState extends State<MyApp> {
                 ),
                 if (!_permissionDenied)
                   OutlinedButton.icon(
-                    onPressed: _initPlatformState,
+                    onPressed: () => _initPlatformState(),
                     icon: const Icon(Icons.refresh),
                     label: const Text('Quét lại'),
                   ),
@@ -244,7 +373,7 @@ class _MyAppState extends State<MyApp> {
       _isLoading,
       onAddManualSongs: _addManualSongs,
       onToggleFavorite: _toggleFavorite,
-      onRefreshSongs: _initPlatformState,
+      onRefreshSongs: () => _initPlatformState(),
       child: child,
     );
   }

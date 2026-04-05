@@ -32,6 +32,10 @@ class _NowPlayingState extends State<NowPlaying> {
   SongModel? song;
   bool isMuted = false;
 
+  /// Guards against concurrent play/next/prev calls that could cause
+  /// overlapping setAudioSource → play sequences.
+  bool _isTransitioning = false;
+
   @override
   void initState() {
     super.initState();
@@ -51,27 +55,17 @@ class _NowPlayingState extends State<NowPlaying> {
     song = widget.song;
 
     _durationSubscription = _audioPlayer.durationStream.listen((value) {
-      if (!mounted) {
-        return;
-      }
-      setState(() {
-        duration = value;
-      });
+      if (!mounted) return;
+      setState(() => duration = value);
     });
 
     _positionSubscription = _audioPlayer.positionStream.listen((value) {
-      if (!mounted) {
-        return;
-      }
-      setState(() {
-        position = value;
-      });
+      if (!mounted) return;
+      setState(() => position = value);
     });
 
     _playerStateSubscription = _audioPlayer.playerStateStream.listen((value) {
-      if (!mounted) {
-        return;
-      }
+      if (!mounted) return;
       if (value.processingState == ja.ProcessingState.completed) {
         _handleComplete();
       }
@@ -92,21 +86,29 @@ class _NowPlayingState extends State<NowPlaying> {
     await play(nextSong);
   }
 
+  /// Play a song, guarded by [_isTransitioning] to prevent concurrent
+  /// setAudioSource calls which can cause just_audio crashes.
   Future<void> play(SongModel s) async {
-    if (s.data.startsWith('content://')) {
-      await _audioPlayer.setAudioSource(
-        ja.AudioSource.uri(Uri.parse(s.data)),
-      );
-    } else {
-      await _audioPlayer.setFilePath(s.data);
+    if (_isTransitioning) return;
+    _isTransitioning = true;
+
+    try {
+      if (s.data.startsWith('content://')) {
+        await _audioPlayer.setAudioSource(
+          ja.AudioSource.uri(Uri.parse(s.data)),
+        );
+      } else {
+        await _audioPlayer.setFilePath(s.data);
+      }
+      await _audioPlayer.play();
+      if (!mounted) return;
+      setState(() => song = s);
+    } catch (e) {
+      // Silently handle — e.g. file not found, unsupported format.
+      debugPrint('NowPlaying.play error: $e');
+    } finally {
+      _isTransitioning = false;
     }
-    await _audioPlayer.play();
-    if (!mounted) {
-      return;
-    }
-    setState(() {
-      song = s;
-    });
   }
 
   Future<void> pause() async {
@@ -116,15 +118,12 @@ class _NowPlayingState extends State<NowPlaying> {
   Future<void> stop() async {
     await _audioPlayer.stop();
     await _audioPlayer.seek(Duration.zero);
-    if (!mounted) {
-      return;
-    }
-    setState(() {
-      position = Duration.zero;
-    });
+    if (!mounted) return;
+    setState(() => position = Duration.zero);
   }
 
   Future<void> next(SongData songData) async {
+    if (_isTransitioning) return;
     await stop();
     final nextSong = songData.nextSong;
     if (nextSong != null) {
@@ -133,6 +132,7 @@ class _NowPlayingState extends State<NowPlaying> {
   }
 
   Future<void> prev(SongData songData) async {
+    if (_isTransitioning) return;
     await stop();
     final previousSong = songData.prevSong;
     if (previousSong != null) {
@@ -142,18 +142,12 @@ class _NowPlayingState extends State<NowPlaying> {
 
   Future<void> mute(bool muted) async {
     await _audioPlayer.setVolume(muted ? 0.0 : 1.0);
-    if (!mounted) {
-      return;
-    }
-    setState(() {
-      isMuted = muted;
-    });
+    if (!mounted) return;
+    setState(() => isMuted = muted);
   }
 
   String _formatDuration(Duration? value) {
-    if (value == null) {
-      return '';
-    }
+    if (value == null) return '';
     final text = value.toString();
     return text.contains('.') ? text.split('.').first : text;
   }
@@ -304,9 +298,7 @@ class _NowPlayingState extends State<NowPlaying> {
                     color: Theme.of(context).unselectedWidgetColor,
                   ),
                   color: Theme.of(context).colorScheme.primary,
-                  onPressed: () {
-                    mute(!isMuted);
-                  },
+                  onPressed: () => mute(!isMuted),
                 ),
               ],
             ),

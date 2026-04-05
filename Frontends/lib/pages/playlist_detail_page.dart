@@ -3,7 +3,6 @@ import 'package:flute_example/pages/now_playing.dart';
 import 'package:flute_example/widgets/mp_circle_avatar.dart';
 import 'package:flute_example/widgets/mp_inherited.dart';
 import 'package:flutter/material.dart';
-import 'package:on_audio_query_pluse/on_audio_query.dart';
 
 class PlaylistDetailPage extends StatefulWidget {
   final String playlistName;

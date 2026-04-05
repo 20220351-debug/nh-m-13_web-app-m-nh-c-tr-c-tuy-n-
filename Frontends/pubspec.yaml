@@ -11,9 +11,9 @@ dependencies:
   just_audio: ^0.10.5
   on_audio_query_pluse: ^3.0.6
   file_picker: ^10.3.10
-  synchronized: ^3.4.0
   shared_preferences: ^2.3.0
   path: ^1.9.0
+  permission_handler: ^11.3.1
 
 dev_dependencies:
   flutter_test:
