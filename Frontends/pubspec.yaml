@@ -1,0 +1,26 @@
+name: flute_example
+description: Demonstrates a modern Flutter music player migration.
+
+environment:
+  sdk: ">=3.5.0 <4.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.8
+  just_audio: ^0.10.5
+  on_audio_query_pluse: ^3.0.6
+  file_picker: ^10.3.10
+  shared_preferences: ^2.3.0
+  path: ^1.9.0
+  permission_handler: ^11.3.1
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/lady.jpeg
+    - assets/music_record.jpeg
