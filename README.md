@@ -12,8 +12,9 @@ web app nghe nhạc trực tuyến là nền tảng cho phép người dùng ngh
 
 
 ## 🚀 Công nghệ
-- Flutter
-- Dart
+ Sử dụng ngôn ngữ ; Dart 
+Framework:Futter ( dùng để xây dựng giao diện UI cho đa nền tảng )
+
 
 ## 📂 Chức năng
 1.	Chức năng chính.
@@ -24,5 +25,5 @@ web app nghe nhạc trực tuyến là nền tảng cho phép người dùng ngh
 -	Điều chỉnh âm lượng
 •	Hiển thị
 •	Tên bài hát
-•	Nghệ sĩ
-•	Ảnh album
+
+
